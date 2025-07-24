@@ -47,3 +47,31 @@ class InitiatePaymentView(APIView):
             return Response({"checkout_url": checkout_url}, status=200)
         else:
             return Response({"error": "Payment initiation failed"}, status=400)
+
+class VerifyPaymentView(APIView):
+    def get(self, request):
+        tx_ref = request.query_params.get("tx_ref")
+        if not tx_ref:
+            return Response({"error": "tx_ref is required"}, status=400)
+
+        verify_url = f"https://api.chapa.co/v1/transaction/verify/{tx_ref}"
+        headers = {
+            "Authorization": f"Bearer {CHAPA_SECRET}"
+        }
+
+        response = requests.get(verify_url, headers=headers)
+        data = response.json()
+
+        try:
+            payment = Payment.objects.get(transaction_id=tx_ref)
+        except Payment.DoesNotExist:
+            return Response({"error": "Payment record not found"}, status=404)
+
+        if data["status"] == "success" and data["data"]["status"] == "success":
+            payment.status = "Completed"
+            payment.save()
+            return Response({"message": "Payment verified successfully"}, status=200)
+        else:
+            payment.status = "Failed"
+            payment.save()
+            return Response({"error": "Payment verification failed"}, status=400)
